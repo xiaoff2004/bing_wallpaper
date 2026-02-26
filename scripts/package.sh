@@ -90,7 +90,7 @@ create_deb_package() {
     SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
     PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
     PKG_NAME="bing-wallpaper-setter"
-    PKG_VERSION="1.0.0"
+    PKG_VERSION="1.1.0"
     PKG_ARCH="amd64"
     PKG_DIR="${PROJECT_ROOT}/dist/package/${PKG_NAME}_${PKG_VERSION}_${PKG_ARCH}"
     
@@ -283,6 +283,7 @@ EOF
     rm -rf "${PORTABLE_DIR}"
     
     print_success "便携版创建成功: dist/bing-wallpaper-setter-portable.tar.gz"
+    cd "$PROJECT_ROOT"
 }
 
 # 显示打包信息
@@ -295,8 +296,8 @@ show_package_info() {
     print_info "生成的文件："
     echo
     echo "1. DEB安装包（推荐）:"
-    echo "   dist/bing-wallpaper-setter_1.0.0_amd64.deb"
-    echo "   安装方法: sudo dpkg -i dist/bing-wallpaper-setter_1.0.0_amd64.deb"
+    echo "   dist/bing-wallpaper-setter_x.x.x_amd64.deb"
+    echo "   安装方法: sudo dpkg -i dist/bing-wallpaper-setter_x.x.x_amd64.deb"
     echo "   或双击安装"
     echo
     echo "2. 便携版压缩包:"
@@ -306,7 +307,7 @@ show_package_info() {
     print_info "系统要求："
     echo "   - Ubuntu 20.04+ 或其他Debian系Linux"
     echo "   - Qt5运行库 (通常已安装)"
-    echo "   - GNOME或KDE桌面环境"
+    echo "   - GNOME/KDE/UKUI桌面环境"
     echo
 }
 

@@ -11,9 +11,10 @@
 BingWallpaperSetter::BingWallpaperSetter(QObject *parent)
     : QObject(parent)
     , m_networkManager(new QNetworkAccessManager(this))
-    , m_bingApiUrl("https://www.bing.com/HPImageArchive.aspx?format=js&idx=0&n=1&mkt=zh-CN")
+    , m_bingApiUrl("https://www.bing.com/HPImageArchive.aspx?format=js&idx=%1&n=1&mkt=zh-CN")
     , m_currentReply(nullptr)
     , m_isCustomDirectory(false)
+    , m_currentOffset(0)
 {
     loadSettings();
     setupWallpaperDirectory();
@@ -84,12 +85,26 @@ bool BingWallpaperSetter::isCustomDirectory() const {
     return m_isCustomDirectory;
 }
 
-void BingWallpaperSetter::downloadAndSetWallpaper() {
+void BingWallpaperSetter::downloadAndSetWallpaper(int button) {
     emit downloadStarted();
     qDebug() << "正在获取Bing今日壁纸信息...";
     
+    if (button == -1){
+        m_currentOffset += 1;
+    }else if (button == 1){
+        m_currentOffset -= 1;
+    }else{
+        m_currentOffset = 0;
+    }
+    if (m_currentOffset < 0){
+        m_currentOffset = 0;
+    }else if (m_currentOffset > 7){
+        m_currentOffset = 7;
+    }
+    
+    QString url = m_bingApiUrl.arg(QString::number(m_currentOffset));
     QNetworkRequest request;
-    request.setUrl(QUrl(m_bingApiUrl));
+    request.setUrl(QUrl(url));
     request.setHeader(QNetworkRequest::UserAgentHeader, "Mozilla/5.0");
     
     m_currentReply = m_networkManager->get(request);
@@ -102,7 +117,7 @@ void BingWallpaperSetter::onApiReplyFinished() {
     if (m_currentReply->error() != QNetworkReply::NoError) {
         QString errorMsg = "API请求失败: " + m_currentReply->errorString();
         qDebug() << errorMsg;
-        emit downloadFinished(false, errorMsg);
+        emit downloadFinished(false, errorMsg, m_currentOffset);
         m_currentReply->deleteLater();
         m_currentReply = nullptr;
         return;
@@ -114,7 +129,7 @@ void BingWallpaperSetter::onApiReplyFinished() {
     
     QJsonDocument doc = QJsonDocument::fromJson(data);
     if (doc.isNull() || !doc.isObject()) {
-        emit downloadFinished(false, "解析API响应失败");
+        emit downloadFinished(false, "解析API响应失败", m_currentOffset);
         return;
     }
     
@@ -122,13 +137,17 @@ void BingWallpaperSetter::onApiReplyFinished() {
     QJsonArray images = obj["images"].toArray();
     
     if (images.isEmpty()) {
-        emit downloadFinished(false, "未找到壁纸信息");
+        emit downloadFinished(false, "未找到壁纸信息", m_currentOffset);
         return;
     }
     
     QJsonObject imageInfo = images[0].toObject();
     QString imageUrl = "https://www.bing.com" + imageInfo["url"].toString();
     QString imageTitle = imageInfo["title"].toString();
+    
+    QStringList cr = imageInfo["copyright"].toString().split('(');
+    QString imageCopyright = cr[0].replace(QChar(0xFF0C), '_').remove(' ');
+    QString imageDate = imageInfo["startdate"].toString();
     
     // 替换为4K分辨率 (3840x2160)
     imageUrl.replace(QRegExp("\\d+x\\d+"), "UHD");
@@ -137,8 +156,8 @@ void BingWallpaperSetter::onApiReplyFinished() {
     qDebug() << "下载链接(4K):" << imageUrl;
     
     // 生成文件名
-    QString dateStr = QDateTime::currentDateTime().toString("yyyyMMdd");
-    QString filename = QString("bing_wallpaper_%1.jpg").arg(dateStr);
+    //QString dateStr = QDateTime::currentDateTime().toString("yyyyMMdd");
+    QString filename = QString("bing_wallpaper_%1_%2.jpg").arg(imageDate).arg(imageCopyright);
     m_currentWallpaperPath = m_wallpaperDir + "/" + filename;
     
     // 如果今天的壁纸已存在，直接使用
@@ -146,9 +165,9 @@ void BingWallpaperSetter::onApiReplyFinished() {
         qDebug() << "今日壁纸已存在:" << m_currentWallpaperPath;
         if (setWallpaper(m_currentWallpaperPath)) {
             emit wallpaperSet(m_currentWallpaperPath);
-            emit downloadFinished(true, "壁纸已设置（使用缓存）");
+            emit downloadFinished(true, "壁纸已设置（使用缓存）", m_currentOffset);
         } else {
-            emit downloadFinished(false, "设置壁纸失败");
+            emit downloadFinished(false, "设置壁纸失败", m_currentOffset);
         }
         return;
     }
@@ -177,7 +196,7 @@ void BingWallpaperSetter::onImageDownloadFinished() {
     if (m_currentReply->error() != QNetworkReply::NoError) {
         QString errorMsg = "壁纸下载失败: " + m_currentReply->errorString();
         qDebug() << errorMsg;
-        emit downloadFinished(false, errorMsg);
+        emit downloadFinished(false, errorMsg, m_currentOffset);
         m_currentReply->deleteLater();
         m_currentReply = nullptr;
         return;
@@ -187,10 +206,11 @@ void BingWallpaperSetter::onImageDownloadFinished() {
     m_currentReply->deleteLater();
     m_currentReply = nullptr;
     
+    qDebug() << "壁纸将保存到:" << m_currentWallpaperPath;
     // 保存壁纸
     QFile file(m_currentWallpaperPath);
     if (!file.open(QIODevice::WriteOnly)) {
-        emit downloadFinished(false, "保存壁纸失败");
+        emit downloadFinished(false, "保存壁纸失败", m_currentOffset);
         return;
     }
     
@@ -200,14 +220,14 @@ void BingWallpaperSetter::onImageDownloadFinished() {
     qDebug() << "壁纸已保存到:" << m_currentWallpaperPath;
     
     // 清理旧壁纸
-    cleanupOldWallpapers(7);
+    //cleanupOldWallpapers(7);
     
     // 设置壁纸
     if (setWallpaper(m_currentWallpaperPath)) {
         emit wallpaperSet(m_currentWallpaperPath);
-        emit downloadFinished(true, "壁纸下载并设置成功！");
+        emit downloadFinished(true, "壁纸下载并设置成功！", m_currentOffset);
     } else {
-        emit downloadFinished(false, "壁纸下载成功但设置失败");
+        emit downloadFinished(false, "壁纸下载成功但设置失败", m_currentOffset);
     }
 }
 
@@ -232,6 +252,8 @@ QString BingWallpaperSetter::detectDesktopEnvironment() {
         return "gnome";
     } else if (desktop.contains("kde") || desktop.contains("plasma")) {
         return "kde";
+    }else if (desktop.contains("ukui")) {
+        return "ukui";
     }
     
     return "unknown";
@@ -264,6 +286,26 @@ bool BingWallpaperSetter::setWallpaperGnome(const QString &imagePath) {
     }
     
     qDebug() << "GNOME壁纸设置成功";
+    return true;
+}
+
+bool BingWallpaperSetter::setWallpaperUkui(const QString &imagePath) {
+    //QString fileUri = "file://"imagePath;
+    // 设置壁纸
+    QProcess process;
+    process.start("gsettings", QStringList() << "set" << "org.mate.background"
+                  << "picture-filename" << imagePath);
+    if (!process.waitForFinished(-1) || process.exitCode() != 0) {
+        qDebug() << "设置picture-filename失败";
+        return false;
+    }
+    // 设置壁纸显示选项为缩放
+    process.start("gsettings", QStringList() << "set" << "org.mate.background"
+                  << "picture-options" << "zoom");
+    if (!process.waitForFinished(-1) || process.exitCode() != 0) {
+        qDebug() << "设置picture-options失败";
+    }
+    qDebug() << "UKUI壁纸设置成功";
     return true;
 }
 
@@ -304,6 +346,8 @@ bool BingWallpaperSetter::setWallpaper(const QString &imagePath) {
         return setWallpaperGnome(imagePath);
     } else if (desktop == "kde") {
         return setWallpaperKde(imagePath);
+    } else if (desktop == "ukui") {
+        return setWallpaperUkui(imagePath);
     } else {
         qDebug() << "未知桌面环境，尝试使用GNOME方法...";
         return setWallpaperGnome(imagePath);

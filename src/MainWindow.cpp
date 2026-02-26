@@ -16,6 +16,7 @@
 #include <QPainter>
 #include <QPainterPath>
 #include <QDebug>
+#include <QStyle>
 
 MainWindow::MainWindow(QWidget *parent)
     : QMainWindow(parent)
@@ -98,12 +99,39 @@ void MainWindow::setupUI() {
     QGroupBox *actionGroup = new QGroupBox("操作", this);
     QVBoxLayout *actionLayout = new QVBoxLayout(actionGroup);
     
-    m_updateButton = new QPushButton("🔄 立即更新壁纸", this);
-    m_updateButton->setStyleSheet("QPushButton { padding: 10px; font-size: 14px; }");
-    connect(m_updateButton, &QPushButton::clicked, this, &MainWindow::updateWallpaper);
-    actionLayout->addWidget(m_updateButton);
+    QStyle* style = QApplication::style();
     
-    m_openFolderButton = new QPushButton("📁 打开壁纸文件夹", this);
+    // 创建水平布局放置三个按钮
+    QHBoxLayout *buttonRowLayout = new QHBoxLayout();
+
+    // 左侧按钮（“上一张”）
+    m_prevButton = new QPushButton(QIcon(style->standardPixmap(QStyle::SP_ArrowLeft)), "上一张");
+    connect(m_prevButton, &QPushButton::clicked, this, &MainWindow::onPrevWallpaper); 
+    buttonRowLayout->addWidget(m_prevButton);
+
+    // 中间的“立即更新壁纸”按钮（原 m_updateButton）
+    m_updateButton = new QPushButton(QIcon(style->standardPixmap(QStyle::SP_BrowserReload)), "立即更新壁纸");
+    //m_updateButton->setStyleSheet("QPushButton { padding: 10px; font-size: 14px; }");
+    connect(m_updateButton, &QPushButton::clicked, this, &MainWindow::updateWallpaper);
+    buttonRowLayout->addWidget(m_updateButton);
+
+    // 右侧按钮（“下一张”）
+    m_nextButton = new QPushButton(QIcon(style->standardPixmap(QStyle::SP_ArrowRight)), "下一张");
+    connect(m_nextButton, &QPushButton::clicked, this, &MainWindow::onNextWallpaper); 
+    buttonRowLayout->addWidget(m_nextButton);
+
+    // 将包含三个按钮的水平布局添加到操作组的垂直布局中
+    actionLayout->addLayout(buttonRowLayout);
+    
+    //m_updateButton = new QPushButton("🔄 立即更新壁纸", this);
+    //m_updateButton = new QPushButton(QIcon(style->standardPixmap(QStyle::SP_BrowserReload)), "立即更新壁纸");
+    
+    //m_updateButton->setStyleSheet("QPushButton { padding: 10px; font-size: 14px; }");
+    //connect(m_updateButton, &QPushButton::clicked, this, &MainWindow::updateWallpaper);
+    //actionLayout->addWidget(m_updateButton);
+    
+    //m_openFolderButton = new QPushButton("📁 打开壁纸文件夹", this);
+    m_openFolderButton = new QPushButton(QIcon(style->standardPixmap(QStyle::SP_DirOpenIcon)), "打开壁纸文件夹");
     connect(m_openFolderButton, &QPushButton::clicked, this, &MainWindow::openWallpaperFolder);
     actionLayout->addWidget(m_openFolderButton);
     mainLayout->addWidget(actionGroup);
@@ -165,7 +193,7 @@ void MainWindow::setupUI() {
     mainLayout->addStretch();
     
     // 关于信息
-    QLabel *aboutLabel = new QLabel("Bing每日壁纸自动更新工具 v1.0", this);
+    QLabel *aboutLabel = new QLabel("Bing每日壁纸自动更新工具 v1.1", this);
     aboutLabel->setAlignment(Qt::AlignCenter);
     aboutLabel->setStyleSheet("QLabel { color: #888; font-size: 10px; margin-top: 10px; }");
     mainLayout->addWidget(aboutLabel);
@@ -271,9 +299,17 @@ void MainWindow::setupSystemTray() {
     connect(showAction, &QAction::triggered, this, &QMainWindow::showNormal);
     m_trayMenu->addAction(showAction);
     
+    QAction *prevAction = new QAction("上一张", this);
+    connect(prevAction, &QAction::triggered, this, &MainWindow::onPrevWallpaper);
+    m_trayMenu->addAction(prevAction);
+    
     QAction *updateAction = new QAction("立即更新壁纸", this);
     connect(updateAction, &QAction::triggered, this, &MainWindow::updateWallpaper);
     m_trayMenu->addAction(updateAction);
+    
+    QAction *nextAction = new QAction("下一张", this);
+    connect(nextAction, &QAction::triggered, this, &MainWindow::onNextWallpaper);
+    m_trayMenu->addAction(nextAction);
     
     QAction *viewAction = new QAction("查看当前壁纸", this);
     connect(viewAction, &QAction::triggered, this, &MainWindow::viewCurrentWallpaper);
@@ -321,17 +357,27 @@ void MainWindow::closeEvent(QCloseEvent *event) {
         hide();
         event->ignore();
         
-        if (m_isAutoUpdateEnabled) {
+        /*if (m_isAutoUpdateEnabled) {
             m_trayIcon->showMessage("Bing壁纸设置器",
                                    "程序已最小化到系统托盘，将继续在后台运行",
                                    QSystemTrayIcon::Information, 3000);
-        }
+        }*/
     }
 }
 
 void MainWindow::updateWallpaper() {
     m_updateButton->setEnabled(false);
-    m_wallpaperSetter->downloadAndSetWallpaper();
+    m_wallpaperSetter->downloadAndSetWallpaper(0);
+}
+
+void MainWindow::onPrevWallpaper() {
+    m_prevButton->setEnabled(false);
+    m_wallpaperSetter->downloadAndSetWallpaper(-1);
+}
+
+void MainWindow::onNextWallpaper() {
+    m_nextButton->setEnabled(false);
+    m_wallpaperSetter->downloadAndSetWallpaper(1);
 }
 
 void MainWindow::viewCurrentWallpaper() {
@@ -469,14 +515,22 @@ void MainWindow::onDownloadProgress(int percentage) {
     m_progressBar->setValue(percentage);
 }
 
-void MainWindow::onDownloadFinished(bool success, const QString &message) {
+void MainWindow::onDownloadFinished(bool success, const QString &message, int offset) {
     m_updateButton->setEnabled(true);
+    m_prevButton->setEnabled(true);
+    m_nextButton->setEnabled(true);
+    if (offset == 0){
+        m_nextButton->setEnabled(false);
+    }
+    if (offset == 7){
+        m_prevButton->setEnabled(false);
+    }
     m_progressBar->setVisible(false);
     
     if (success) {
         m_statusLabel->setText("✓ " + message);
         m_statusLabel->setStyleSheet("QLabel { color: green; }");
-        m_trayIcon->showMessage("成功", message, QSystemTrayIcon::Information, 3000);
+        //m_trayIcon->showMessage("成功", message, QSystemTrayIcon::Information, 3000);
     } else {
         m_statusLabel->setText("✗ " + message);
         m_statusLabel->setStyleSheet("QLabel { color: red; }");

@@ -23,6 +23,8 @@ protected:
     void closeEvent(QCloseEvent *event) override;
 
 private slots:
+    void onPrevWallpaper();
+    void onNextWallpaper();
     void updateWallpaper();
     void viewCurrentWallpaper();
     void openWallpaperFolder();
@@ -31,7 +33,7 @@ private slots:
     void toggleAutoUpdate(bool enabled);
     void onDownloadStarted();
     void onDownloadProgress(int percentage);
-    void onDownloadFinished(bool success, const QString &message);
+    void onDownloadFinished(bool success, const QString &message, int offset);
     void onWallpaperSet(const QString &path);
     void trayIconActivated(QSystemTrayIcon::ActivationReason reason);
 
@@ -55,6 +57,8 @@ private:
     QLabel *m_currentWallpaperLabel;
     QLabel *m_wallpaperPreviewLabel;
     QLabel *m_directoryLabel;
+    QPushButton *m_prevButton;
+    QPushButton *m_nextButton;
     QPushButton *m_updateButton;
     QPushButton *m_openFolderButton;
     QPushButton *m_changeDirectoryButton;
