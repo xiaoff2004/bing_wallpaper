@@ -1,56 +1,6 @@
-# 编译产物
-build/
-dist/
-*.o
-*.a
-*.so
-*.dylib
-*.exe
-
-# CMake 生成文件
-CMakeCache.txt
-CMakeFiles/
-cmake_install.cmake
-Makefile
-*.cmake
-
-# Qt 生成文件
-*_autogen/
-moc_*.cpp
-ui_*.h
-qrc_*.cpp
-*.qm
-
-# 打包文件
-dist/package/bing-wallpaper-setter_*_amd64/
-dist/portable/
-*.deb
-*.tar.gz
-*.zip
-
-# IDE 文件
-.vscode/
-.idea/
-*.pro.user
-*.pro.user.*
-.history/
-*.creator
-*.creator.user
-
-# 系统文件
-.DS_Store
-*~
-*.swp
-*.swo
-Thumbs.db
-
-# 日志文件
+/target/
+/dist/
+/.build-tools/
 *.log
-
-# 临时文件
-tmp/
-temp/
-*.tmp
-
-
-
+__pycache__/
+/validation/

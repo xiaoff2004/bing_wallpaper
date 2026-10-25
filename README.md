@@ -1,287 +1,149 @@
-<div align="center">
+# Bing 壁纸 Rust · 日景
 
-# 🖼️ Bing 壁纸设置器
+这是 [xiaoff2004/bing_wallpaper](https://github.com/xiaoff2004/bing_wallpaper) 的 Rust 重写版，使用 **egui / eframe** 原生界面、**reqwest + rustls** 网络层、**zbus** 桌面通信和 **ksni** 系统托盘，沿用 MIT 许可证。
 
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![Platform](https://img.shields.io/badge/platform-Linux-lightgrey.svg)](https://www.linux.org/)
-[![Qt](https://img.shields.io/badge/Qt-5.15+-green.svg)](https://www.qt.io/)
-[![Language](https://img.shields.io/badge/language-C%2B%2B-blue.svg)](https://isocpp.org/)
+`main` 现使用 Rust 实现。原 Qt/C++ 版本仍保留在 [Git 历史](https://github.com/xiaoff2004/bing_wallpaper/tree/e0f6b48) 中；原来的 Qt 1.0.0 Release 不代表 Rust 版。Rust 客户端当前版本为 0.1.0，可按下文从源码构建。
 
-**自动获取 Bing 每日精美 4K 壁纸并设置为桌面背景的现代化 Linux 应用**
+本项目当前面向 **Linux 桌面**。不是 Windows/macOS 版本，也不是 Flatpak 沙箱应用。
 
-[功能特点](#-功能特点) • [快速开始](#-快速开始) • [编译构建](#-编译构建) • [使用说明](#-使用说明) • [贡献指南](#-贡献指南)
+![Rust 客户端界面](assets/screenshot.png)
 
-</div>
+## 功能
 
----
+- 中文界面、深浅主题、图片预览、托盘更新和退出。
+- 获取 Bing UHD 图片；UHD 不可用时尝试 1920×1080。实际尺寸由 Bing 提供。
+- 可选择地区、保存目录、1–24 小时更新间隔和 1–365 张保留数量。
+- 独立后台线程执行下载、定时更新与桌面操作，界面不被网络请求阻塞。
+- HTTP 超时和有限重试；自动任务失败后 5 分钟重试；支持系统代理。
+- 校验图片内容和尺寸，拒绝将 HTML 错误页或损坏文件当作壁纸；临时文件写完后原子替换。
+- 使用 Bing 返回的日期命名文件；验证今日缓存后可离线应用，支持旧版 zh-CN 缓存。
+- 错误信息保留后端名称、命令状态和 stderr，不再只显示“设置壁纸失败”。
+- 清理只匹配程序生成的文件名，跳过符号链接，保护当前应用的图片。设置失败时不清理旧壁纸。
+- 更新任务互斥，GUI 单实例；再次启动会唤起现有窗口。
+- 首次读取原版 `~/.config/BingWallpaper/Settings.conf` 的更新间隔、自动更新开关和可用目录。新配置独立保存。
 
-## ✨ 功能特点
+## 桌面兼容性
 
-- 🎨 **现代化界面** - 简洁优雅的 Qt GUI 界面，支持深浅主题自动适配
-- 🖼️ **实时预览** - 主界面直接显示当前壁纸，无需额外点击
-- 📷 **4K 超高清** - 自动获取 Bing 每日 4K 超高清壁纸 (3840x2160)
-- 📁 **自定义路径** - 灵活配置壁纸存储位置
-- ⏰ **智能定时** - 自动更新间隔可调（1-24 小时）
-- 🔔 **系统托盘** - 最小化到托盘，后台静默运行
-- 🧹 **自动清理** - 智能管理磁盘空间，保留最近 7 天壁纸
-- 🖥️ **多桌面支持** - 完美支持 GNOME、KDE 等主流桌面环境
-- 🌓 **主题同步** - 同时设置明暗主题壁纸
-- 🎯 **开箱即用** - 提供 DEB 安装包和便携版，安装简单
+| 桌面 | 实现 | 说明 |
+| --- | --- | --- |
+| KDE Plasma 5 / 6 | 原生 D-Bus `evaluateScript`，设置所有桌面屏幕的图片插件 | 不依赖 `qdbus`；失败时依次尝试 `plasma-apply-wallpaperimage`、Qt 6/5 的 qdbus 工具 |
+| GNOME / Unity | GSettings `picture-uri`，按实际键支持设置 `picture-uri-dark` | 旧版没有深色键也可用；检查配置是否被锁定 |
+| Cinnamon | `org.cinnamon.desktop.background` | 使用桌面自身 schema |
+| MATE | `org.mate.background` / `picture-filename` | 使用文件路径而不是 URI |
+| XFCE | `xfconf-query` | 动态枚举现有显示器和工作区，需先在桌面设置中选过图片 |
+| Sway | `swaymsg` | 检查 IPC 返回的 `success`，设置所有输出 |
+| Hyprland / 其他 Wayland | `swww` | 需安装 swww 并运行 `swww-daemon`；不自动启动或替换用户的壁纸守护进程 |
+| 其他 X11 窗口管理器 | 显式选择 `feh` | 不用于 Wayland；未知桌面不会盲目调用 GNOME 后端 |
 
-## 📸 应用截图
+当前实机验证以开发机器上的 KDE Wayland 为准。其他后端有隔离命令测试，仍需在对应桌面上实测。不支持的环境会返回明确错误；COSMIC、LXQt、Windows、macOS 和桌面 portal 尚未实现。
 
-<div align="center">
+KDE 修改涵盖 Plasma `desktops()` 返回的桌面，包括不同活动。调用后确认配置已写入，但操作系统最终渲染仍由桌面管理器负责。
 
-### 主界面
+## 构建
 
-<img src="picture/main.png" width="700" alt="主界面">
+需要 Rust 1.88 或更新版本。依赖版本已锁定在 `Cargo.lock`。
 
-*简洁美观的主界面，壁纸预览一目了然*
-
-### 系统托盘
-
-<img src="picture/tray-icon.png" width="200" alt="系统托盘图标">
-
-*右键托盘图标即可快速操作*
-
-### 应用菜单
-
-<img src="picture/app-menu.png" width="200" alt="应用菜单">
-
-*在系统应用菜单中启动*
-
-</div>
-
-## 🚀 快速开始
-
-注：当前要有图片作为背景显示
-
-### 方法一：DEB 包安装（推荐）
+Ubuntu / Debian 的常规构建环境：
 
 ```bash
-# 下载最新版本
-wget https://github.com/xiaoff2004/bing-wallpaper-setter/releases/latest/download/bing-wallpaper-setter_1.0.0_amd64.deb
-
-# 安装
-sudo dpkg -i bing-wallpaper-setter_1.0.0_amd64.deb
-
-# 如果遇到依赖问题，运行
-sudo apt-get install -f
+sudo apt install build-essential pkg-config libx11-dev libxi-dev libxrandr-dev libxkbcommon-dev libwayland-dev libgl1-mesa-dev fonts-noto-cjk
+git clone https://github.com/xiaoff2004/bing_wallpaper.git
+cd bing_wallpaper
+cargo build --release --locked
 ```
 
-### 方法二：便携版
+应用不需要 Qt、WebKit 或 GTK 开发库。运行 GUI 需要桌面会话、OpenGL 驱动及 X11/Wayland 运行库；中文显示需要系统中文字体。HTTP 使用 rustls，无需 OpenSSL 开发库。
+
+也可以运行 `sh scripts/build.sh`。该脚本优先使用系统 C 编译器；如果本机自行准备了 `.build-tools/cc` 和 `.build-tools/ar` 包装器，也可以使用用户级工具链。这些本机工具不随源码分发。
+
+预编译包的运行库要求取决于构建环境。本次实测的 x86_64 构建需要 **glibc 2.39 或更新版本**（如 Ubuntu 24.04+）。在更旧的发行版上请从源码构建；桌面后端兼容与预编译包的运行库要求是两个独立条件。
+
+如果 OpenGL 驱动有问题，可尝试系统提供的软件渲染：
 
 ```bash
-# 下载并解压
-wget https://github.com/xiaoff2004/bing-wallpaper-setter/releases/latest/download/bing-wallpaper-setter-portable.tar.gz
-tar -xzf bing-wallpaper-setter-portable.tar.gz
-cd bing-wallpaper-setter
-
-# 安装到系统
-./install.sh
+LIBGL_ALWAYS_SOFTWARE=1 ./target/release/bing-wallpaper-rs
 ```
 
-### 方法三：脚本安装
+## 安装和运行
 
 ```bash
-# 克隆仓库
-git clone https://github.com/xiaoff2004/bing-wallpaper-setter.git
-cd bing-wallpaper-setter
-
-# 运行安装脚本
-./scripts/build_and_install.sh
+python3 scripts/install.py
+~/.local/bin/bing-wallpaper-rs
 ```
 
-## 🛠️ 编译构建
+用户级安装，不需要 sudo，不覆盖原版。应用菜单名称为 **Bing 壁纸 Rust**。请退出原版的后台程序，避免两个程序同时自动更新壁纸。
 
-### 系统要求
+如果旧版通过 DEB 包安装，在确认 Rust 版正常运行后，可执行 `sudo apt remove bing-wallpaper-setter` 移除旧版。此操作保留个人壁纸和配置；无需使用旧版卸载脚本。
 
-- Ubuntu 20.04+ / Debian 11+ / 其他 Linux 发行版
-- GCC 9+ 或 Clang 10+
-- CMake 3.16+
-- Qt 5.15+
-- GNOME 或 KDE 桌面环境
-
-### 安装依赖
-
-**Ubuntu/Debian:**
+登录启动在“自动更新与设置”中开启，并点击“保存设置”。开启自动更新后，过期任务会在启动时补做。关闭到后台需要桌面支持系统托盘；Wayland 下采用最小化，X11 下隐藏窗口。没有托盘时关闭即退出，不会留下无法唤起的隐藏窗口。
 
 ```bash
-sudo apt update
-sudo apt install cmake g++ qtbase5-dev qt5-qmake libqt5network5
+# 下载并应用；有有效今日缓存时可离线使用
+bing-wallpaper-rs update
+
+# 忽略缓存重新获取
+bing-wallpaper-rs update --force
+
+# 仅下载；不修改桌面、不清理、不改变上次成功应用状态
+bing-wallpaper-rs download
+
+# 应用现有本地文件
+bing-wallpaper-rs set '/path/to/wallpaper.jpg'
+
+# 覆盖桌面识别（单次运行）
+bing-wallpaper-rs --backend kde update
+
+# 只读诊断；无需先启动 GUI
+bing-wallpaper-rs doctor
+bing-wallpaper-rs config
+
+# 登录启动和后台启动
+bing-wallpaper-rs autostart on
+bing-wallpaper-rs autostart off
+bing-wallpaper-rs --background
 ```
 
-编译步骤
+不要使用 sudo 启动应用。SSH、容器或系统级 cron 通常不具备桌面会话环境；请从桌面启动器或当前桌面终端运行。
+
+## 配置和数据
+
+- 配置：`$XDG_CONFIG_HOME/bing-wallpaper-rs/config.toml`（通常为 `~/.config/…`）。
+- 状态和错误日志：`$XDG_STATE_HOME/bing-wallpaper-rs/`（通常为 `~/.local/state/…`）。
+- 错误日志达到 512 KiB 后轮换一次，保留 `errors.previous.log`。
+- 默认壁纸目录：XDG 图片目录下的 `BingWallpapers`，可在界面修改。
+- 登录启动：`~/.config/autostart/bing-wallpaper-rs.desktop`。
+
+已下载的图像版权归原权利人所有；预览展示 Bing 提供的标题和版权说明。旧版缓存没有元数据时显示通用标题，点击“重新获取”可补充信息。
+
+原版目录路径若采用 Qt 特殊转义格式而未被识别，可在新界面手动填写；旧配置不会被改写。损坏的新配置会给出错误，不会静默覆盖。
+
+## 验证
 
 ```bash
-# 克隆项目
-git clone https://github.com/your-username/bing-wallpaper-setter.git
-cd bing-wallpaper-setter
-
-# 创建构建目录
-mkdir build && cd build
-
-# 配置并编译
-cmake -DCMAKE_BUILD_TYPE=Release ../src
-make -j$(nproc)
-
-# 运行程序
-./bin/BingWallpaperSetter
+sh scripts/check.sh
 ```
 
-### 打包发布
+测试包含桌面识别、URI/脚本转义、图片校验、HTTP 重试、清理保护、配置迁移、命令超时和隔离 CLI 后端测试。隔离测试使用临时 XDG 目录和模拟命令，不修改真实桌面。
+
+可在图形会话运行一次截图冒烟检查：
 
 ```bash
-# 生成 DEB 包和便携版
-./scripts/package.sh
-
-# 生成的文件位于 dist/ 目录
-# - dist/bing-wallpaper-setter_1.0.0_amd64.deb
-# - dist/bing-wallpaper-setter-portable.tar.gz
+./target/release/bing-wallpaper-rs --smoke-screenshot /tmp/bing-wallpaper.png
 ```
 
-## 📖 使用说明
-
-### 启动应用
-
-- **应用程序菜单**: 搜索 "Bing壁纸设置器"
-- **命令行**: 运行 `BingWallpaperSetter`
-- **后台运行**: 最小化到系统托盘，程序继续在后台工作
-
-### 主要功能
-
-#### 🔄 立即更新壁纸
-
-点击主界面的"立即更新壁纸"按钮：
-
-- 从 Bing API 获取今日壁纸信息
-- 下载 4K 超高清原图 (3840×2160)
-- 自动设置为桌面背景
-- 在主界面预览当前壁纸
-
-#### ⚙️ 自动更新设置
-
-1. 勾选"启用自动更新"
-2. 设置更新间隔（1-24 小时）
-3. 程序将在后台自动更新壁纸
-
-#### 📁 壁纸管理
-
-- **打开文件夹**: 快速访问保存的壁纸文件
-- **更改路径**: 自定义壁纸存储位置
-- **恢复默认**: 重置为默认路径 `~/Pictures/BingWallpapers`
-
-### 配置文件
-
-- 配置文件: `~/.config/BingWallpaper/`
-- 默认壁纸路径: `~/Pictures/BingWallpapers/`
-- 壁纸命名格式: `bing_wallpaper_YYYYMMDD.jpg`
-
-## 🗑️ 卸载
-
-### DEB 包卸载
+卸载仅删除本项目的二进制、菜单图标和登录启动项，保留壁纸及配置：
 
 ```bash
-sudo apt remove bing-wallpaper-setter
-# 或
-sudo dpkg -r bing-wallpaper-setter
+python3 scripts/uninstall.py
 ```
 
-### 便携版卸载
+生成带用户级安装脚本的压缩包：`python3 scripts/package.py`。产物及 SHA-256 校验文件位于 `dist/`。
 
-```bash
-cd bing-wallpaper-setter
-./uninstall.sh  # 便携版
-```
+## 实现参考
 
-### 脚本卸载
+- [eframe 0.33 文档](https://docs.rs/eframe/0.33.3/eframe/)
+- [KDE Plasma 桌面脚本 API](https://develop.kde.org/docs/plasma/scripting/api/)
+- [zbus](https://docs.rs/zbus/5.19.0/zbus/)
+- [ksni 系统托盘](https://docs.rs/ksni/0.3.7/ksni/)
 
-```bash
-cd bing-wallpaper-setter
-./scripts/uninstall.sh   # 或 ./uninstall.sh  # 便携版
-```
-
-卸载程序会：
-
-- ✅ 停止运行中的程序
-- ✅ 删除程序文件
-- ✅ 删除桌面快捷方式和图标
-- ✅ 删除配置文件
-- ❓ 可选删除已下载的壁纸（由用户决定）
-
-## 📁 项目结构
-
-```
-├── src/                          # 源代码
-│   ├── main.cpp                  # 程序入口
-│   ├── MainWindow.{h,cpp}        # 主窗口界面
-│   ├── BingWallpaperSetter.{h,cpp}  # 核心功能
-│   ├── CMakeLists.txt            # CMake 配置
-│   ├── bing-wallpaper-setter.desktop  # 桌面快捷方式
-│   └── bing-wallpaper-setter.png # 应用图标
-│
-├── scripts/                      # 构建脚本
-│   ├── package.sh                # 打包脚本
-│   ├── install.sh                # 安装脚本
-│   ├── uninstall.sh              # 卸载脚本
-│   └── build_and_install.sh      # 快速构建安装
-│
-├── build/                        # 构建目录（自动生成）
-├── dist/                         # 发布文件（自动生成）
-├── LICENSE                       # MIT 许可证
-└── README.md                     # 项目文档
-
-```
-
-## 🤝 贡献指南
-
-欢迎贡献代码、报告问题或提出建议！
-
-### 如何贡献
-
-1. Fork 本仓库
-2. 创建特性分支 (`git checkout -b feature/AmazingFeature`)
-3. 提交更改 (`git commit -m 'Add some AmazingFeature'`)
-4. 推送到分支 (`git push origin feature/AmazingFeature`)
-5. 开启 Pull Request
-
-### 开发指南
-
-- 遵循现有代码风格
-- 添加适当的注释
-- 测试你的更改
-- 更新相关文档
-
-### 报告问题
-
-使用 [GitHub Issues](https://github.com/your-username/bing-wallpaper-setter/issues) 报告：
-
-- 🐛 Bug 报告
-- 💡 功能建议
-- 📝 文档改进
-- ❓ 使用问题
-
-## 📄 许可证
-
-本项目采用 MIT 许可证 - 详见 [LICENSE](LICENSE) 文件
-
-## 🙏 致谢
-
-- [Bing](https://www.bing.com/) - 提供精美的每日壁纸
-- [Qt](https://www.qt.io/) - 强大的跨平台 GUI 框架
-- 所有贡献者和用户的支持
-
-## 📮 联系方式
-
-- **问题反馈**: [GitHub Issues](https://github.com/your-username/bing-wallpaper-setter/issues)
-- **功能建议**: [GitHub Discussions](https://github.com/your-username/bing-wallpaper-setter/discussions)
-
----
-
-<div align="center">
-
-**如果这个项目对你有帮助，请给个 ⭐️ Star 支持一下！**
-
-Made with ❤️ by the Bing Wallpaper Setter Team
-
-</div>
+开发和提交说明见 [CONTRIBUTING.md](CONTRIBUTING.md)，版本变更见 [CHANGELOG.md](CHANGELOG.md)。
