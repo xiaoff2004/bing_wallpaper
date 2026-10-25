@@ -46,6 +46,9 @@ PR 描述应说明问题、修改后的行为及验证结果。请保留 MIT 许
 ```bash
 cargo build --release --locked
 python3 scripts/package.py
+python3 scripts/verify-package.py
 ```
 
-压缩包及 SHA-256 文件输出到 `dist/`。发布时应说明架构和最低运行库要求；源码更新不会自动发布二进制 Release。
+DEB、便携压缩包、构建信息及 SHA-256 文件输出到 `dist/`。打包脚本检查二进制版本并识别实际架构和 glibc 要求，避免错标软件包。
+
+发布时将 Cargo 版本、锁文件和更新日志一并提交，推送对应 `vX.Y.Z` 标签。`Release packages` 工作流会构建和测试软件包，确认可安装、启动和卸载后发布 Release。普通分支提交只触发检查；发布流程不需要额外配置个人访问令牌，使用仓库自带的 `GITHUB_TOKEN`。已公开的 Release 不覆盖，修复后发布新版本。

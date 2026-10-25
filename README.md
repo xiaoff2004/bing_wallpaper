@@ -2,11 +2,40 @@
 
 这是 [xiaoff2004/bing_wallpaper](https://github.com/xiaoff2004/bing_wallpaper) 的 Rust 重写版，使用 **egui / eframe** 原生界面、**reqwest + rustls** 网络层、**zbus** 桌面通信和 **ksni** 系统托盘，沿用 MIT 许可证。
 
-`main` 现使用 Rust 实现。原 Qt/C++ 版本仍保留在 [Git 历史](https://github.com/xiaoff2004/bing_wallpaper/tree/e0f6b48) 中；原来的 Qt 1.0.0 Release 不代表 Rust 版。Rust 客户端当前版本为 0.1.0，可按下文从源码构建。
+`main` 现使用 Rust 实现。原 Qt/C++ 版本仍保留在 [Git 历史](https://github.com/xiaoff2004/bing_wallpaper/tree/e0f6b48) 中；原来的 Qt 1.0.0 Release 不代表 Rust 版。Rust 客户端当前版本为 0.1.0。
 
 本项目当前面向 **Linux 桌面**。不是 Windows/macOS 版本，也不是 Flatpak 沙箱应用。
 
 ![Rust 客户端界面](assets/screenshot.png)
+
+## 下载安装包
+
+从 [最新 Release](https://github.com/xiaoff2004/bing_wallpaper/releases/latest) 下载 Rust 版，当前自动构建提供 Linux x86_64 / amd64 包。
+
+| 文件 | 用途 |
+| --- | --- |
+| `bing-wallpaper-rs_0.1.0_amd64.deb` | Ubuntu 24.04+ / 运行库满足要求的 Debian 系统安装包 |
+| `bing-wallpaper-rs-0.1.0-linux-x86_64.tar.gz` | 解压运行或安装到用户目录 |
+| `SHA256SUMS` | 下载校验 |
+| `build-info.json` | 源提交、架构、最低 glibc 和二进制校验值 |
+
+DEB 安装方式，在下载目录执行：
+
+```bash
+sudo apt install ./bing-wallpaper-rs_0.1.0_amd64.deb
+```
+
+便携版：
+
+```bash
+tar -xzf bing-wallpaper-rs-0.1.0-linux-x86_64.tar.gz
+cd bing-wallpaper-rs-0.1.0-linux-x86_64
+./bin/bing-wallpaper-rs
+# 可选：安装到用户目录
+python3 scripts/install.py
+```
+
+将全部发布附件放到同一目录后，可运行 `sha256sum --check SHA256SUMS` 验证。若之前用脚本安装 Rust 版，改用 DEB 前先退出程序并运行旧安装目录中的 `python3 scripts/uninstall.py`，避免用户级菜单和命令覆盖系统版本；个人壁纸与配置会保留。
 
 ## 功能
 
@@ -131,13 +160,32 @@ sh scripts/check.sh
 ./target/release/bing-wallpaper-rs --smoke-screenshot /tmp/bing-wallpaper.png
 ```
 
-卸载仅删除本项目的二进制、菜单图标和登录启动项，保留壁纸及配置：
+用户级脚本安装的卸载方式如下，删除二进制、菜单图标和登录启动项，保留壁纸及配置：
 
 ```bash
 python3 scripts/uninstall.py
 ```
 
-生成带用户级安装脚本的压缩包：`python3 scripts/package.py`。产物及 SHA-256 校验文件位于 `dist/`。
+DEB 安装的版本使用 `sudo apt remove bing-wallpaper-rs` 卸载。用户自行启用的登录启动项，可在卸载前运行 `bing-wallpaper-rs autostart off` 关闭。
+
+## 打包与自动发布
+
+```bash
+cargo build --release --locked
+python3 scripts/package.py
+python3 scripts/verify-package.py
+```
+
+默认生成 `.deb`、`.tar.gz`、`SHA256SUMS` 和 `build-info.json` 到 `dist/`，需要 Python 3.11+、`dpkg-deb`；校验脚本还需要 `desktop-file-validate`。非 Debian 构建环境可以使用 `python3 scripts/package.py --format tar` 仅生成便携包。
+
+发布新版本时，更新 `Cargo.toml`、`Cargo.lock` 和更新日志，提交并推送代码，然后创建与 Cargo 版本一致的标签：
+
+```bash
+git tag -a v0.1.0 -m "Bing Wallpaper Rust 0.1.0"
+git push origin refs/tags/v0.1.0
+```
+
+后续版本将示例中的 `0.1.0` 换成新版本号。`Release packages` 工作流会检查标签、执行 Rust 检查、构建并校验软件包，在 Ubuntu 24.04 runner 上安装和卸载 DEB，用虚拟显示检查 GUI 启动，最后公开 GitHub Release 并标记 Latest。上传失败会保留草稿，可重跑该标签的工作流；不会覆盖已经公开的发行版。`build-info.json` 记录构建来源，软件包校验不等于数字签名。
 
 ## 实现参考
 
